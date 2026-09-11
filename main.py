@@ -16,7 +16,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
 
 # Точна назва колонки в Notion, де зберігається URL-посилання на фото
-PHOTO_COLUMN_NAME = "Зображення"  
+PHOTO_COLUMN_NAME = "Photo"  # Замініть на свою назву (наприклад, "Картинка", "Image", "URL")
 
 notion = Client(auth=NOTION_TOKEN)
 
@@ -104,7 +104,8 @@ def extract_image_url(properties):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Вітаємо! 👋 Введіть EAN10 або EAN40, і я знайду потрібну інформацію."
+        "Привіт! 👋\n\nЯ допоможу знайти інформацію про товар у базі Notion.\nПросто надішліть код **EAN10** або **EAN40**.",
+        parse_mode="Markdown"
     )
 
 async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,7 +137,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
-            # 1. Спочатку шукаємо та відправляємо ФОТО за посиланням
+            # 1. Спочатку шукаємо та відправляємо ФОТО
             image_url = extract_image_url(properties)
             if image_url:
                 try:
@@ -144,18 +145,26 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as img_err:
                     logging.warning(f"Не вдалося відправити зображення: {img_err}")
 
-            # 2. Формуємо ТЕКСТ (EAN10 -> EAN40 -> решта полів)
-            priority_keys = ["EAN10", "EAN40"]
+            # 2. Фіксований порядок виводу полів
+            priority_keys = [
+                "EAN10",
+                "EAN40",
+                "Опис",
+                "Кратність, шт.",
+                "Термін 5-6 тижнів",
+                "Термін 3-4 тижня"
+            ]
+            
             message_lines = []
 
-            # Додаємо EAN10 та EAN40
+            # Спочатку додаємо поля за заданим порядком
             for key in priority_keys:
                 if key in properties:
                     val = extract_property_value(properties[key])
                     if val != "—":
                         message_lines.append(f"• **{key}:** {val}")
 
-            # Додаємо всі інші поля (окрім колонки з фото, щоб не дублювати URL)
+            # Додаємо решту полів (якщо є інші колонки, крім фото та вже виведених)
             for prop_name, prop_data in properties.items():
                 if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME:
                     val = extract_property_value(prop_data)
@@ -164,7 +173,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             full_message = "\n".join(message_lines)
 
-            # Відправляємо окреме текстове повідомлення
+            # Відправляємо текстове повідомлення
             if full_message:
                 await update.message.reply_text(
                     full_message, 
