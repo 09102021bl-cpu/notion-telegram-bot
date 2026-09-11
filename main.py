@@ -136,13 +136,24 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
-            # Формуємо тільки список атрибутів без заголовків і посилання
+            # Фіксований порядок пріоритетних полів
+            priority_keys = ["EAN10", "EAN40"]
+            
             message_lines = []
 
+            # 1. Спочатку додаємо EAN10 та EAN40
+            for key in priority_keys:
+                if key in properties:
+                    val = extract_property_value(properties[key])
+                    if val != "—":
+                        message_lines.append(f"• **{key}:** {val}")
+
+            # 2. Додаємо всі інші поля
             for prop_name, prop_data in properties.items():
-                val = extract_property_value(prop_data)
-                if val != "—":
-                    message_lines.append(f"• **{prop_name}:** {val}")
+                if prop_name not in priority_keys:
+                    val = extract_property_value(prop_data)
+                    if val != "—":
+                        message_lines.append(f"• **{prop_name}:** {val}")
 
             full_message = "\n".join(message_lines)
             image_url = extract_image_url(properties)
