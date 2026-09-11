@@ -104,7 +104,7 @@ def extract_image_url(properties):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привіт! Надішли мені код EAN10 або EAN40 для пошуку в Notion."
+        "Вітаємо! 👋 Введіть EAN10 або EAN40, і я знайду потрібну інформацію."
     )
 
 async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
