@@ -17,7 +17,7 @@ DATABASE_ID = os.getenv("DATABASE_ID")
 
 notion = Client(auth=NOTION_TOKEN)
 
-# Веб-сервер для проходження Health Check на Render
+# Простий сервер для проходження перевірки портів Render
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -42,7 +42,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
-        # Використовуємо правильний метод для версії 2.2.1
+        # Використовуємо правильний метод databases.query для версії 2.2.1
         results = notion.databases.query(
             database_id=DATABASE_ID,
             filter={
