@@ -16,7 +16,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
 
 # Точна назва колонки в Notion, де зберігається URL-посилання на фото
-PHOTO_COLUMN_NAME = "Photo"  # Замініть на свою назву (наприклад, "Картинка", "Image", "URL")
+PHOTO_COLUMN_NAME = "Зображення"  
 
 notion = Client(auth=NOTION_TOKEN)
 
