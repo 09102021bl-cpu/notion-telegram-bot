@@ -15,8 +15,8 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
 
-# Точна назва колонки в Notion, де зберігається URL-посилання на фото
-PHOTO_COLUMN_NAME = "Photo"  # Замініть на свою назву (наприклад, "Картинка", "Image", "URL")
+# Вкажіть точну назву колонки в Notion, де лежить посилання або файл фото
+PHOTO_COLUMN_NAME = "Зображення"  
 
 notion = Client(auth=NOTION_TOKEN)
 
@@ -66,7 +66,7 @@ def extract_property_value(prop_data):
     return "—"
 
 def extract_image_url(properties):
-    """Отримує прямий URL зображення з Notion (тип URL або Files & Media)."""
+    """Отримує URL зображення з Notion."""
     # 1. Шукаємо спочатку у вказаній колонці
     if PHOTO_COLUMN_NAME in properties:
         prop = properties[PHOTO_COLUMN_NAME]
@@ -84,12 +84,12 @@ def extract_image_url(properties):
                 elif first_file.get("type") == "file":
                     return first_file.get("file", {}).get("url")
 
-    # 2. Якщо в точній колонці не знайшли, перевіряємо інші URL/Files поля
+    # 2. Якщо в точній колонці не знайшли, шукаємо в будь-якому іншому полі типа URL чи Files
     for prop_name, prop in properties.items():
         p_type = prop.get("type")
         if p_type == "url" and prop.get("url"):
             url = prop.get("url")
-            if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
+            if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', 'http']):
                 return url
         elif p_type == "files" and prop.get("files"):
             files = prop.get("files")
@@ -137,15 +137,19 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
-            # 1. Спочатку шукаємо та відправляємо ФОТО
+            # -------------------------------------------------------------
+            # КРОК 1: СПОЧАТКУ НАДСИЛАЄМО ФОТОГРАФІЮ (якщо знайдено посилання)
+            # -------------------------------------------------------------
             image_url = extract_image_url(properties)
             if image_url:
                 try:
                     await update.message.reply_photo(photo=image_url)
                 except Exception as img_err:
-                    logging.warning(f"Не вдалося відправити зображення: {img_err}")
+                    logging.warning(f"Не вдалося відправити зображення ({image_url}): {img_err}")
 
-            # 2. Фіксований порядок виводу полів
+            # -------------------------------------------------------------
+            # КРОК 2: НАДСИЛАЄМО ТЕКСТОВУ ІНФОРМАЦІЮ ОКРЕМИМ ПОВІДОМЛЕННЯМ
+            # -------------------------------------------------------------
             priority_keys = [
                 "EAN10",
                 "EAN40",
@@ -157,14 +161,14 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             message_lines = []
 
-            # Спочатку додаємо поля за заданим порядком
+            # Спочатку додаємо пріоритетні поля
             for key in priority_keys:
                 if key in properties:
                     val = extract_property_value(properties[key])
                     if val != "—":
                         message_lines.append(f"• **{key}:** {val}")
 
-            # Додаємо решту полів (якщо є інші колонки, крім фото та вже виведених)
+            # Додаємо решту полів (крім колонки з фото)
             for prop_name, prop_data in properties.items():
                 if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME:
                     val = extract_property_value(prop_data)
@@ -173,7 +177,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             full_message = "\n".join(message_lines)
 
-            # Відправляємо текстове повідомлення
             if full_message:
                 await update.message.reply_text(
                     full_message, 
