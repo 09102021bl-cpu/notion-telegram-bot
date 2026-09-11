@@ -17,7 +17,7 @@ notion = Client(auth=NOTION_TOKEN)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Привіт! Надішли мені код EAN10 або EAN40 для пошуку."
+        "Привіт! Надішли мені код EAN10 або EAN40 для пошуку в Notion."
     )
 
 async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -28,9 +28,8 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
-        # У новому SDK використовується data_sources замість databases
-        results = notion.data_sources.query(
-            data_source_id=DATABASE_ID,
+        results = notion.databases.query(
+            database_id=DATABASE_ID,
             filter={
                 "or": [
                     {"property": "EAN10", "rich_text": {"contains": query_text}},
@@ -64,7 +63,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(response, parse_mode="Markdown", disable_web_page_preview=True)
 
     except Exception as e:
-        logging.error(f"Деталі помилки: {e}")
+        logging.error(f"Помилка при пошуку: {e}")
         await update.message.reply_text(f"Помилка від Notion API:\n`{e}`", parse_mode="Markdown")
 
 if __name__ == "__main__":
