@@ -28,6 +28,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
+        # Стандартний метод для версії notion-client 2.2.1
         results = notion.databases.query(
             database_id=DATABASE_ID,
             filter={
