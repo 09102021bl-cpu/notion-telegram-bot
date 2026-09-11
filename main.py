@@ -1,5 +1,7 @@
 import os
 import logging
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from notion_client import Client
@@ -15,6 +17,18 @@ DATABASE_ID = os.getenv("DATABASE_ID")
 
 notion = Client(auth=NOTION_TOKEN)
 
+# Простий заглушечний сервер для Render (щоб пройти Health Check)
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def run_dummy_server():
+    port = int(os.getenv("PORT", 8080))
+    server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
+    server.serve_forever()
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привіт! Надішли мені код EAN10 або EAN40 для пошуку в Notion."
@@ -28,7 +42,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
-        # Стандартний метод для версії notion-client 2.2.1
+        # Використовуємо стандартний databases.query
         results = notion.databases.query(
             database_id=DATABASE_ID,
             filter={
@@ -68,6 +82,9 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Помилка від Notion API:\n`{e}`", parse_mode="Markdown")
 
 if __name__ == "__main__":
+    # Запуск фонового веб-сервера для Render
+    threading.Thread(target=run_dummy_server, daemon=True).start()
+    
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, search_notion))
