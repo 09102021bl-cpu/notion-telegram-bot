@@ -28,18 +28,16 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
-        # Універсальний пошук: перевіряємо і rich_text, і title
-        results = notion.databases.query(
-            **{
-                "database_id": DATABASE_ID,
-                "filter": {
-                    "or": [
-                        {"property": "EAN10", "rich_text": {"contains": query_text}},
-                        {"property": "EAN40", "rich_text": {"contains": query_text}},
-                        {"property": "EAN10", "title": {"contains": query_text}},
-                        {"property": "EAN40", "title": {"contains": query_text}}
-                    ]
-                }
+        # У новому SDK використовується data_sources замість databases
+        results = notion.data_sources.query(
+            data_source_id=DATABASE_ID,
+            filter={
+                "or": [
+                    {"property": "EAN10", "rich_text": {"contains": query_text}},
+                    {"property": "EAN40", "rich_text": {"contains": query_text}},
+                    {"property": "EAN10", "title": {"contains": query_text}},
+                    {"property": "EAN40", "title": {"contains": query_text}}
+                ]
             }
         )
 
@@ -54,7 +52,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
             properties = page.get("properties", {})
             title = "Запис знайдено"
             
-            # Шукаємо назву сторінки для красивого виводу
             for prop_name, prop_data in properties.items():
                 if prop_data.get("type") == "title" and prop_data.get("title"):
                     if len(prop_data["title"]) > 0:
@@ -68,7 +65,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logging.error(f"Деталі помилки: {e}")
-        # Якщо сталася помилка, бот виведе її точний текст прямо у чат Telegram для швидкої діагностики
         await update.message.reply_text(f"Помилка від Notion API:\n`{e}`", parse_mode="Markdown")
 
 if __name__ == "__main__":
