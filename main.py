@@ -15,7 +15,7 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
 
-# Вкажіть точну назву колонки в Notion, де лежить посилання на фото/файли
+# Точна назва колонки в Notion, де зберігається URL-посилання на фото
 PHOTO_COLUMN_NAME = "Photo"  # Замініть на свою назву (наприклад, "Картинка", "Image", "URL")
 
 notion = Client(auth=NOTION_TOKEN)
@@ -33,7 +33,7 @@ def run_dummy_server():
     server.serve_forever()
 
 def extract_property_value(prop_data):
-    """Обробляє різні типи полів Notion."""
+    """Обробляє різні типи полів Notion та повертає їх текстове значення."""
     if not prop_data:
         return "—"
     
@@ -66,8 +66,8 @@ def extract_property_value(prop_data):
     return "—"
 
 def extract_image_url(properties):
-    """Шукає посилання на фото у вказаній колонці або серед будь-яких URL/Files полів."""
-    # 1. Перевіряємо точну колонку
+    """Отримує прямий URL зображення з Notion (тип URL або Files & Media)."""
+    # 1. Шукаємо спочатку у вказаній колонці
     if PHOTO_COLUMN_NAME in properties:
         prop = properties[PHOTO_COLUMN_NAME]
         p_type = prop.get("type")
@@ -84,12 +84,12 @@ def extract_image_url(properties):
                 elif first_file.get("type") == "file":
                     return first_file.get("file", {}).get("url")
 
-    # 2. Якщо в точній колонці не знайшли, шукаємо перше-ліпше посилання на файл або URL
+    # 2. Якщо в точній колонці не знайшли, перевіряємо інші URL/Files поля
     for prop_name, prop in properties.items():
         p_type = prop.get("type")
         if p_type == "url" and prop.get("url"):
             url = prop.get("url")
-            if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+            if any(url.lower().endswith(ext) for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif']):
                 return url
         elif p_type == "files" and prop.get("files"):
             files = prop.get("files")
@@ -136,41 +136,41 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
-            # Фіксований порядок пріоритетних полів
+            # 1. Спочатку шукаємо та відправляємо ФОТО за посиланням
+            image_url = extract_image_url(properties)
+            if image_url:
+                try:
+                    await update.message.reply_photo(photo=image_url)
+                except Exception as img_err:
+                    logging.warning(f"Не вдалося відправити зображення: {img_err}")
+
+            # 2. Формуємо ТЕКСТ (EAN10 -> EAN40 -> решта полів)
             priority_keys = ["EAN10", "EAN40"]
-            
             message_lines = []
 
-            # 1. Спочатку додаємо EAN10 та EAN40
+            # Додаємо EAN10 та EAN40
             for key in priority_keys:
                 if key in properties:
                     val = extract_property_value(properties[key])
                     if val != "—":
                         message_lines.append(f"• **{key}:** {val}")
 
-            # 2. Додаємо всі інші поля
+            # Додаємо всі інші поля (окрім колонки з фото, щоб не дублювати URL)
             for prop_name, prop_data in properties.items():
-                if prop_name not in priority_keys:
+                if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME:
                     val = extract_property_value(prop_data)
                     if val != "—":
                         message_lines.append(f"• **{prop_name}:** {val}")
 
             full_message = "\n".join(message_lines)
-            image_url = extract_image_url(properties)
 
-            # Відправляємо фото з підписом або звичайний текст
-            if image_url:
-                try:
-                    await update.message.reply_photo(
-                        photo=image_url,
-                        caption=full_message,
-                        parse_mode="Markdown"
-                    )
-                except Exception as img_err:
-                    logging.warning(f"Не вдалося завантажити фото ({img_err}), відправляємо текстом.")
-                    await update.message.reply_text(full_message, parse_mode="Markdown", disable_web_page_preview=True)
-            else:
-                await update.message.reply_text(full_message, parse_mode="Markdown", disable_web_page_preview=True)
+            # Відправляємо окреме текстове повідомлення
+            if full_message:
+                await update.message.reply_text(
+                    full_message, 
+                    parse_mode="Markdown", 
+                    disable_web_page_preview=True
+                )
 
     except Exception as e:
         logging.error(f"Помилка при пошуку: {e}")
