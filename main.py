@@ -135,23 +135,19 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for page in pages:
             properties = page.get("properties", {})
-            page_url = page.get("url", "")
 
-            # Формуємо текст опису
-            message_lines = ["📋 **Знайдено запис в Notion:**\n"]
+            # Формуємо тільки список атрибутів без заголовків і посилання
+            message_lines = []
 
             for prop_name, prop_data in properties.items():
                 val = extract_property_value(prop_data)
                 if val != "—":
                     message_lines.append(f"• **{prop_name}:** {val}")
 
-            if page_url:
-                message_lines.append(f"\n🔗 [Відкрити в Notion]({page_url})")
-
             full_message = "\n".join(message_lines)
             image_url = extract_image_url(properties)
 
-            # Відправляємо або фото з підписом, або звичайний текст
+            # Відправляємо фото з підписом або звичайний текст
             if image_url:
                 try:
                     await update.message.reply_photo(
