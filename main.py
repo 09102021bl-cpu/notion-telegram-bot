@@ -17,7 +17,7 @@ DATABASE_ID = os.getenv("DATABASE_ID")
 
 notion = Client(auth=NOTION_TOKEN)
 
-# Простий заглушечний сервер для Render (щоб пройти Health Check)
+# Веб-сервер для проходження Health Check на Render
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -42,7 +42,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
-        # Використовуємо стандартний databases.query
+        # Використовуємо правильний метод для версії 2.2.1
         results = notion.databases.query(
             database_id=DATABASE_ID,
             filter={
@@ -82,7 +82,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Помилка від Notion API:\n`{e}`", parse_mode="Markdown")
 
 if __name__ == "__main__":
-    # Запуск фонового веб-сервера для Render
+    # Запуск фонового веб-сервера
     threading.Thread(target=run_dummy_server, daemon=True).start()
     
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
