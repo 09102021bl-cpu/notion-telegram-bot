@@ -66,28 +66,30 @@ def extract_property_value(prop_data):
     return "—"
 
 def extract_image_url(properties):
+    """Спершу шукає посилання на зображення в колонці 'Опис', а якщо немає — перевіряє інші поля."""
+    # 1. Шукаємо в колонці "Опис"
+    if "Опис" in properties:
+        desc_prop = properties["Опис"]
+        desc_type = desc_prop.get("type")
+        
+        url_val = None
+        if desc_type == "url":
+            url_val = desc_prop.get("url")
+        elif desc_type == "rich_text":
+            url_val = "".join([t.get("plain_text", "") for t in desc_prop.get("rich_text", [])])
+        elif desc_type == "title":
+            url_val = "".join([t.get("plain_text", "") for t in desc_prop.get("title", [])])
+            
+        if url_val and ("http://" in url_val or "https://" in url_val):
+            return url_val.strip()
+
+    # 2. Якщо в описі посилання не знайшлося, перевіряємо звичну колонку Photo
     if PHOTO_COLUMN_NAME in properties:
         prop = properties[PHOTO_COLUMN_NAME]
         p_type = prop.get("type")
         
         if p_type == "url" and prop.get("url"):
             return prop.get("url")
-        
-        elif p_type == "files" and prop.get("files"):
-            files = prop.get("files")
-            if files:
-                first_file = files[0]
-                if first_file.get("type") == "external":
-                    return first_file.get("external", {}).get("url")
-                elif first_file.get("type") == "file":
-                    return first_file.get("file", {}).get("url")
-
-    for prop_name, prop in properties.items():
-        p_type = prop.get("type")
-        if p_type == "url" and prop.get("url"):
-            url = prop.get("url")
-            if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', 'http']) and 'ledvance.com/media/resource' not in url:
-                return url
         elif p_type == "files" and prop.get("files"):
             files = prop.get("files")
             if files:
@@ -135,6 +137,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
+            # 1. Завантажуємо та надсилаємо фото першим (тепер бере з колонки "Опис")
             image_url = extract_image_url(properties)
             if image_url:
                 try:
@@ -142,7 +145,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as img_err:
                     logging.warning(f"Не вдалося відправити зображення ({image_url}): {img_err}")
 
-            # Назва тепер іде першою, а поле "Опис", якщо там посилання Ledvance, пропускається або очищається
+            # 2. Формуємо текстовий окермий блок (де Назва перша, а посилання з Опису не виводиться як текст)
             priority_keys = [
                 "Назва",
                 "EAN",
@@ -158,8 +161,8 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if key in properties:
                     val = extract_property_value(properties[key])
                     if val != "—":
-                        # Якщо це поле "Опис" і значення містить посилання ledvance, пропускаємо його
-                        if key == "Опис" and ("ledvance.com/media/resource" in val or val.startswith("http")):
+                        # Якщо це поле "Опис" і воно містить посилання на картинку, пропускаємо його в тексті
+                        if key == "Опис" and ("http://" in val or "https://" in val):
                             continue
                         message_lines.append(f"• **{key}:** {val}")
 
@@ -167,8 +170,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME:
                     val = extract_property_value(prop_data)
                     if val != "—":
-                        # Додаткова перевірка для решти полів, щоб випадкові посилання теж не виводились у тексті опису
-                        if "ledvance.com/media/resource" in val:
+                        if "http://" in val or "https://item" in val:
                             continue
                         message_lines.append(f"• **{prop_name}:** {val}")
 
