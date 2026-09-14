@@ -15,7 +15,6 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
 
-# Точна назва колонки в Notion для фото
 PHOTO_COLUMN_NAME = "Photo"
 
 notion = Client(auth=NOTION_TOKEN)
@@ -44,7 +43,10 @@ def extract_property_value(prop_data):
         return "".join([t.get("plain_text", "") for t in prop_data["rich_text"]]) or "—"
     
     elif prop_type == "number" and prop_data.get("number") is not None:
-        return str(prop_data.get("number"))
+        val = prop_data.get("number")
+        if isinstance(val, float) and val.is_integer():
+            return str(int(val))
+        return str(val)
     
     elif prop_type == "select" and prop_data.get("select"):
         return prop_data["select"].get("name", "—")
@@ -84,7 +86,7 @@ def extract_image_url(properties):
         p_type = prop.get("type")
         if p_type == "url" and prop.get("url"):
             url = prop.get("url")
-            if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', 'http']):
+            if any(ext in url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp', '.gif', 'http']) and 'ledvance.com/media/resource' not in url:
                 return url
         elif p_type == "files" and prop.get("files"):
             files = prop.get("files")
@@ -111,7 +113,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
-        # Безпечно конвертуємо в число, якщо це можливо, або залишаємо 0
         try:
             query_number = float(query_text)
         except ValueError:
@@ -141,7 +142,9 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as img_err:
                     logging.warning(f"Не вдалося відправити зображення ({image_url}): {img_err}")
 
+            # Назва тепер іде першою, а поле "Опис", якщо там посилання Ledvance, пропускається або очищається
             priority_keys = [
+                "Назва",
                 "EAN",
                 "Опис",
                 "Кратність, шт.",
@@ -155,12 +158,18 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if key in properties:
                     val = extract_property_value(properties[key])
                     if val != "—":
+                        # Якщо це поле "Опис" і значення містить посилання ledvance, пропускаємо його
+                        if key == "Опис" and ("ledvance.com/media/resource" in val or val.startswith("http")):
+                            continue
                         message_lines.append(f"• **{key}:** {val}")
 
             for prop_name, prop_data in properties.items():
                 if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME:
                     val = extract_property_value(prop_data)
                     if val != "—":
+                        # Додаткова перевірка для решти полів, щоб випадкові посилання теж не виводились у тексті опису
+                        if "ledvance.com/media/resource" in val:
+                            continue
                         message_lines.append(f"• **{prop_name}:** {val}")
 
             full_message = "\n".join(message_lines)
