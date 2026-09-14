@@ -111,30 +111,21 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
+        # Безпечно конвертуємо в число, якщо це можливо, або залишаємо 0
+        try:
+            query_number = float(query_text)
+        except ValueError:
+            query_number = 0.0
+
         results = notion.databases.query(
             database_id=DATABASE_ID,
             filter={
-                "or": [
-                    {"property": "EAN", "rich_text": {"contains": query_text}},
-                    {"property": "EAN", "title": {"contains": query_text}},
-                    {"property": "EAN", "number": {"equals": float(query_text) if query_text.isdigit() else 0}}
-                ]
+                "property": "EAN",
+                "number": {"equals": query_number}
             }
         )
 
         pages = results.get("results", [])
-
-        if not pages:
-            results = notion.databases.query(
-                database_id=DATABASE_ID,
-                filter={
-                    "or": [
-                        {"property": "EAN", "rich_text": {"contains": query_text}},
-                        {"property": "EAN", "title": {"contains": query_text}}
-                    ]
-                }
-            )
-            pages = results.get("results", [])
 
         if not pages:
             await update.message.reply_text("Нічого не знайдено 😔")
