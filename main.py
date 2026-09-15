@@ -15,7 +15,7 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
 
-# Тепер колонка з посиланням на зображення називається "Зображення"
+# Колонка з посиланням на зображення
 PHOTO_COLUMN_NAME = "Зображення"
 
 notion = Client(auth=NOTION_TOKEN)
@@ -67,7 +67,6 @@ def extract_property_value(prop_data):
     return "—"
 
 def extract_image_url(properties):
-    """Шукає посилання на зображення спочатку в новій колонці 'Зображення', а потім підстраховується полем Photo."""
     if PHOTO_COLUMN_NAME in properties:
         img_prop = properties[PHOTO_COLUMN_NAME]
         img_type = img_prop.get("type")
@@ -83,7 +82,6 @@ def extract_image_url(properties):
         if url_val and ("http://" in url_val or "https://" in url_val):
             return url_val.strip()
 
-    # Запасний варіант, якщо десь лишилося поле Photo
     if "Photo" in properties:
         prop = properties["Photo"]
         p_type = prop.get("type")
@@ -134,7 +132,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
-            # 1. Надсилаємо фото першим повідомленням із нової колонки «Зображення»
+            # 1. Надсилаємо фото першим повідомленням
             image_url = extract_image_url(properties)
             if image_url:
                 try:
@@ -142,10 +140,10 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as img_err:
                     logging.warning(f"Не вдалося відправити зображення ({image_url}): {img_err}")
 
-            # 2. Пріоритетний порядок виведення полів у тексті
+            # 2. Пріоритетний порядок: спочатку EAN, потім Опис, далі інші важливі поля
             priority_keys = [
-                "Назва",
                 "EAN",
+                "Опис",
                 "Залишок",
                 "Кратність, шт."
             ]
@@ -163,7 +161,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME and prop_name != "Photo":
                     val = extract_property_value(prop_data)
                     if val != "—":
-                        # Пропускаємо випадкові довгі посилання в тексті
                         if "http://" in val or "https://" in val:
                             continue
                         message_lines.append(f"• **{prop_name}:** {val}")
