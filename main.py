@@ -15,7 +15,8 @@ NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
 
-PHOTO_COLUMN_NAME = "Photo"
+# Тепер колонка з посиланням на зображення називається "Зображення"
+PHOTO_COLUMN_NAME = "Зображення"
 
 notion = Client(auth=NOTION_TOKEN)
 
@@ -66,28 +67,26 @@ def extract_property_value(prop_data):
     return "—"
 
 def extract_image_url(properties):
-    """Спершу шукає посилання на зображення в колонці 'Опис', а якщо немає — перевіряє інші поля."""
-    # 1. Шукаємо в колонці "Опис"
-    if "Опис" in properties:
-        desc_prop = properties["Опис"]
-        desc_type = desc_prop.get("type")
+    """Шукає посилання на зображення спочатку в новій колонці 'Зображення', а потім підстраховується полем Photo."""
+    if PHOTO_COLUMN_NAME in properties:
+        img_prop = properties[PHOTO_COLUMN_NAME]
+        img_type = img_prop.get("type")
         
         url_val = None
-        if desc_type == "url":
-            url_val = desc_prop.get("url")
-        elif desc_type == "rich_text":
-            url_val = "".join([t.get("plain_text", "") for t in desc_prop.get("rich_text", [])])
-        elif desc_type == "title":
-            url_val = "".join([t.get("plain_text", "") for t in desc_prop.get("title", [])])
+        if img_type == "url":
+            url_val = img_prop.get("url")
+        elif img_type == "rich_text":
+            url_val = "".join([t.get("plain_text", "") for t in img_prop.get("rich_text", [])])
+        elif img_type == "title":
+            url_val = "".join([t.get("plain_text", "") for t in img_prop.get("title", [])])
             
         if url_val and ("http://" in url_val or "https://" in url_val):
             return url_val.strip()
 
-    # 2. Якщо в описі посилання не знайшлося, перевіряємо звичну колонку Photo
-    if PHOTO_COLUMN_NAME in properties:
-        prop = properties[PHOTO_COLUMN_NAME]
+    # Запасний варіант, якщо десь лишилося поле Photo
+    if "Photo" in properties:
+        prop = properties["Photo"]
         p_type = prop.get("type")
-        
         if p_type == "url" and prop.get("url"):
             return prop.get("url")
         elif p_type == "files" and prop.get("files"):
@@ -96,8 +95,6 @@ def extract_image_url(properties):
                 first_file = files[0]
                 if first_file.get("type") == "external":
                     return first_file.get("external", {}).get("url")
-                elif first_file.get("type") == "file":
-                    return first_file.get("file", {}).get("url")
 
     return None
 
@@ -137,7 +134,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
-            # 1. Завантажуємо та надсилаємо фото першим (тепер бере з колонки "Опис")
+            # 1. Надсилаємо фото першим повідомленням із нової колонки «Зображення»
             image_url = extract_image_url(properties)
             if image_url:
                 try:
@@ -145,14 +142,12 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as img_err:
                     logging.warning(f"Не вдалося відправити зображення ({image_url}): {img_err}")
 
-            # 2. Формуємо текстовий окермий блок (де Назва перша, а посилання з Опису не виводиться як текст)
+            # 2. Пріоритетний порядок виведення полів у тексті
             priority_keys = [
                 "Назва",
                 "EAN",
-                "Опис",
-                "Кратність, шт.",
-                "Термін 5-6 тижнів",
-                "Термін 3-4 тижня"
+                "Залишок",
+                "Кратність, шт."
             ]
             
             message_lines = []
@@ -161,16 +156,15 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if key in properties:
                     val = extract_property_value(properties[key])
                     if val != "—":
-                        # Якщо це поле "Опис" і воно містить посилання на картинку, пропускаємо його в тексті
-                        if key == "Опис" and ("http://" in val or "https://" in val):
-                            continue
                         message_lines.append(f"• **{key}:** {val}")
 
+            # Виводимо решту полів (окрім службових колонок з фото)
             for prop_name, prop_data in properties.items():
-                if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME:
+                if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME and prop_name != "Photo":
                     val = extract_property_value(prop_data)
                     if val != "—":
-                        if "http://" in val or "https://item" in val:
+                        # Пропускаємо випадкові довгі посилання в тексті
+                        if "http://" in val or "https://" in val:
                             continue
                         message_lines.append(f"• **{prop_name}:** {val}")
 
