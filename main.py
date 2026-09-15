@@ -1,6 +1,7 @@
 import os
 import logging
 import threading
+from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -14,8 +15,9 @@ logging.basicConfig(
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
+# ID каналу для статистики (опціонально)
+LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")
 
-# Колонка з посиланням на зображення
 PHOTO_COLUMN_NAME = "Зображення"
 
 notion = Client(auth=NOTION_TOKEN)
@@ -107,6 +109,18 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not query_text:
         return
 
+    user = update.message.from_user
+    username = f"@{user.username}" if user.username else f"{user.first_name or ''} {user.last_name or ''}".strip()
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # Надсилаємо статистику в лог-канал, якщо він налаштований
+    if LOG_CHANNEL_ID:
+        try:
+            log_text = f"📊 **Запит до бота**\n• Час: `{current_time}`\n• Користувач: {username} (ID: `{user.id}`)\n• Запит (EAN): `{query_text}`"
+            await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_text, parse_mode="Markdown")
+        except Exception as log_err:
+            logging.warning(f"Не вдалося надіслати лог у канал: {log_err}")
+
     await update.message.reply_text(f"🔍 Шукаю: «{query_text}»...")
 
     try:
@@ -132,7 +146,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
-            # 1. Надсилаємо фото першим повідомленням
             image_url = extract_image_url(properties)
             if image_url:
                 try:
@@ -140,7 +153,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 except Exception as img_err:
                     logging.warning(f"Не вдалося відправити зображення ({image_url}): {img_err}")
 
-            # 2. Пріоритетний порядок: спочатку EAN, потім Опис, далі інші важливі поля
             priority_keys = [
                 "EAN",
                 "Опис",
@@ -156,7 +168,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if val != "—":
                         message_lines.append(f"• **{key}:** {val}")
 
-            # Виводимо решту полів (окрім службових колонок з фото)
             for prop_name, prop_data in properties.items():
                 if prop_name not in priority_keys and prop_name != PHOTO_COLUMN_NAME and prop_name != "Photo":
                     val = extract_property_value(prop_data)
