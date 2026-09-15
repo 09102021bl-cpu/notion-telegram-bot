@@ -15,7 +15,6 @@ logging.basicConfig(
 NOTION_TOKEN = os.getenv("NOTION_TOKEN")
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_ID = os.getenv("DATABASE_ID")
-# ID каналу для статистики (опціонально)
 LOG_CHANNEL_ID = os.getenv("LOG_CHANNEL_ID")
 
 PHOTO_COLUMN_NAME = "Зображення"
@@ -113,11 +112,11 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = f"@{user.username}" if user.username else f"{user.first_name or ''} {user.last_name or ''}".strip()
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Надсилаємо статистику в лог-канал, якщо він налаштований
+    # Надсилаємо статистику як простий текст (без parse_mode, щоб уникнути помилок форматування)
     if LOG_CHANNEL_ID:
         try:
-            log_text = f"📊 **Запит до бота**\n• Час: `{current_time}`\n• Користувач: {username} (ID: `{user.id}`)\n• Запит (EAN): `{query_text}`"
-            await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_text, parse_mode="Markdown")
+            log_text = f"📊 Запит до бота\n• Час: {current_time}\n• Користувач: {username} (ID: {user.id})\n• Запит (EAN): {query_text}"
+            await context.bot.send_message(chat_id=LOG_CHANNEL_ID, text=log_text)
         except Exception as log_err:
             logging.warning(f"Не вдалося надіслати лог у канал: {log_err}")
 
