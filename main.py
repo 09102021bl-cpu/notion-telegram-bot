@@ -1,6 +1,12 @@
 import os
 import logging
 import threading
+requests = None
+try:
+    import requests
+except ImportError:
+    requests = None
+
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
@@ -79,6 +85,14 @@ def extract_image_url(properties):
             url_val = "".join([t.get("plain_text", "") for t in img_prop.get("rich_text", [])])
         elif img_type == "title":
             url_val = "".join([t.get("plain_text", "") for t in img_prop.get("title", [])])
+        elif img_type == "files":
+            files = img_prop.get("files", [])
+            if files:
+                first_file = files[0]
+                if first_file.get("type") == "external":
+                    url_val = first_file.get("external", {}).get("url")
+                elif first_file.get("type") == "file":
+                    url_val = first_file.get("file", {}).get("url")
             
         if url_val and ("http://" in url_val or "https://" in url_val):
             return url_val.strip()
@@ -94,6 +108,8 @@ def extract_image_url(properties):
                 first_file = files[0]
                 if first_file.get("type") == "external":
                     return first_file.get("external", {}).get("url")
+                elif first_file.get("type") == "file":
+                    return first_file.get("file", {}).get("url")
 
     return None
 
@@ -112,7 +128,6 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username = f"@{user.username}" if user.username else f"{user.first_name or ''} {user.last_name or ''}".strip()
     current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # Надсилаємо статистику як простий текст (без parse_mode, щоб уникнути помилок форматування)
     if LOG_CHANNEL_ID:
         try:
             log_text = f"📊 Запит до бота\n• Час: {current_time}\n• Користувач: {username} (ID: {user.id})\n• Запит (EAN): {query_text}"
@@ -147,10 +162,27 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             image_url = extract_image_url(properties)
             if image_url:
+                sent_photo = False
+                # Спочатку пробуємо відправити напряму за посиланням
                 try:
                     await update.message.reply_photo(photo=image_url)
-                except Exception as img_err:
-                    logging.warning(f"Не вдалося відправити зображення ({image_url}): {img_err}")
+                    sent_photo = True
+                except Exception:
+                    pass
+
+                # Якщо пряме посилання заблоковане сайтом, завантажуємо через байти з User-Agent
+                if not sent_photo and requests:
+                    try:
+                        headers = {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        }
+                        response = requests.get(image_url, headers=headers, timeout=10)
+                        if response.status_code == 200:
+                            await update.message.reply_photo(photo=response.content)
+                        else:
+                            logging.warning(f"Сайт повернув статус {response.status_code} для зображення: {image_url}")
+                    except Exception as img_err:
+                        logging.warning(f"Не вдалося завантажити/відправити зображення: {img_err}")
 
             priority_keys = [
                 "EAN",
