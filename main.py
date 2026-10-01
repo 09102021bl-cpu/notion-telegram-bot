@@ -74,42 +74,39 @@ def extract_property_value(prop_data):
     return "—"
 
 def extract_image_url(properties):
-    if PHOTO_COLUMN_NAME in properties:
-        img_prop = properties[PHOTO_COLUMN_NAME]
-        img_type = img_prop.get("type")
-        
-        url_val = None
-        if img_type == "url":
-            url_val = img_prop.get("url")
-        elif img_type == "rich_text":
-            url_val = "".join([t.get("plain_text", "") for t in img_prop.get("rich_text", [])])
-        elif img_type == "title":
-            url_val = "".join([t.get("plain_text", "") for t in img_prop.get("title", [])])
-        elif img_type == "files":
-            files = img_prop.get("files", [])
-            if files:
-                first_file = files[0]
-                if first_file.get("type") == "external":
-                    url_val = first_file.get("external", {}).get("url")
-                elif first_file.get("type") == "file":
-                    url_val = first_file.get("file", {}).get("url")
+    possible_names = [PHOTO_COLUMN_NAME, "Photo", "Image", "Зображення", "зображення"]
+    
+    for name in possible_names:
+        if name in properties:
+            prop = properties[name]
+            p_type = prop.get("type")
             
-        if url_val and ("http://" in url_val or "https://" in url_val):
-            return url_val.strip()
-
-    if "Photo" in properties:
-        prop = properties["Photo"]
-        p_type = prop.get("type")
-        if p_type == "url" and prop.get("url"):
-            return prop.get("url")
-        elif p_type == "files" and prop.get("files"):
-            files = prop.get("files")
-            if files:
-                first_file = files[0]
-                if first_file.get("type") == "external":
-                    return first_file.get("external", {}).get("url")
-                elif first_file.get("type") == "file":
-                    return first_file.get("file", {}).get("url")
+            url_val = None
+            if p_type == "url":
+                url_val = prop.get("url")
+            elif p_type == "rich_text":
+                texts = prop.get("rich_text", [])
+                if texts:
+                    url_val = "".join([t.get("plain_text", "") for t in texts])
+            elif p_type == "title":
+                texts = prop.get("title", [])
+                if texts:
+                    url_val = "".join([t.get("plain_text", "") for t in texts])
+            elif p_type == "formula":
+                formula = prop.get("formula", {})
+                if formula.get("type") == "string":
+                    url_val = formula.get("string")
+            elif p_type == "files":
+                files = prop.get("files", [])
+                if files:
+                    first_file = files[0]
+                    if first_file.get("type") == "external":
+                        url_val = first_file.get("external", {}).get("url")
+                    elif first_file.get("type") == "file":
+                        url_val = first_file.get("file", {}).get("url")
+            
+            if url_val and ("http://" in url_val or "https://" in url_val):
+                return url_val.strip()
 
     return None
 
@@ -160,30 +157,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for page in pages:
             properties = page.get("properties", {})
 
-            image_url = extract_image_url(properties)
-            if image_url:
-                sent_photo = False
-                # Спочатку пробуємо відправити напряму за посиланням
-                try:
-                    await update.message.reply_photo(photo=image_url)
-                    sent_photo = True
-                except Exception:
-                    pass
-
-                # Якщо пряме посилання заблоковане сайтом, завантажуємо через байти з User-Agent
-                if not sent_photo and requests:
-                    try:
-                        headers = {
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                        }
-                        response = requests.get(image_url, headers=headers, timeout=10)
-                        if response.status_code == 200:
-                            await update.message.reply_photo(photo=response.content)
-                        else:
-                            logging.warning(f"Сайт повернув статус {response.status_code} для зображення: {image_url}")
-                    except Exception as img_err:
-                        logging.warning(f"Не вдалося завантажити/відправити зображення: {img_err}")
-
+            # 1. Формуємо та надсилаємо текстову частину
             priority_keys = [
                 "EAN",
                 "Опис",
@@ -215,6 +189,29 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     parse_mode="Markdown", 
                     disable_web_page_preview=True
                 )
+
+            # 2. Намагаємося завантажити та надіслати зображення
+            image_url = extract_image_url(properties)
+            if image_url:
+                sent_photo = False
+                try:
+                    await update.message.reply_photo(photo=image_url, read_timeout=5, write_timeout=5)
+                    sent_photo = True
+                except Exception:
+                    pass
+
+                if not sent_photo and requests:
+                    try:
+                        headers = {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                        }
+                        response = requests.get(image_url, headers=headers, timeout=10)
+                        if response.status_code == 200:
+                            await update.message.reply_photo(photo=response.content)
+                        else:
+                            logging.warning(f"Сайт повернув статус {response.status_code} для зображення: {image_url}")
+                    except Exception as img_err:
+                        logging.warning(f"Не вдалося завантажити/відправити зображення: {img_err}")
 
     except Exception as e:
         logging.error(f"Помилка при пошуку: {e}")
