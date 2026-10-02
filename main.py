@@ -106,7 +106,14 @@ def extract_image_url(properties):
                         url_val = first_file.get("file", {}).get("url")
             
             if url_val and ("http://" in url_val or "https://" in url_val):
-                return url_val.strip()
+                clean_url = url_val.strip()
+                
+                # Автоматично пропускаємо Ledvance через проксі-кеш для обходу блокування хостингу
+                if "ledvance.com" in clean_url:
+                    no_protocol = clean_url.replace("https://", "").replace("http://", "")
+                    return f"https://images.weserv.nl/?url={no_protocol}"
+                    
+                return clean_url
 
     return None
 
@@ -195,7 +202,7 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if image_url:
                 sent_photo = False
                 try:
-                    await update.message.reply_photo(photo=image_url, read_timeout=5, write_timeout=5)
+                    await update.message.reply_photo(photo=image_url, read_timeout=10, write_timeout=10)
                     sent_photo = True
                 except Exception:
                     pass
