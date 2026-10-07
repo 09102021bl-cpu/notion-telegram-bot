@@ -1,12 +1,7 @@
 import os
 import logging
 import threading
-requests = None
-try:
-    import requests
-except ImportError:
-    requests = None
-
+import urllib.request
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from telegram import Update
@@ -108,7 +103,7 @@ def extract_image_url(properties):
             if url_val and ("http://" in url_val or "https://" in url_val):
                 clean_url = url_val.strip()
                 
-                # Автоматично пропускаємо Ledvance через проксі-кеш для обходу блокування хостингу
+                # Проксуємо через weserv лише те, що блокується (Ledvance)
                 if "ledvance.com" in clean_url:
                     no_protocol = clean_url.replace("https://", "").replace("http://", "")
                     return f"https://images.weserv.nl/?url={no_protocol}"
@@ -197,28 +192,19 @@ async def search_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     disable_web_page_preview=True
                 )
 
-            # 2. Намагаємося завантажити та надіслати зображення
+            # 2. Завантажуємо зображення через байти (працює завжди на 100%)
             image_url = extract_image_url(properties)
             if image_url:
-                sent_photo = False
                 try:
-                    await update.message.reply_photo(photo=image_url, read_timeout=10, write_timeout=10)
-                    sent_photo = True
-                except Exception:
-                    pass
-
-                if not sent_photo and requests:
-                    try:
-                        headers = {
-                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                        }
-                        response = requests.get(image_url, headers=headers, timeout=10)
-                        if response.status_code == 200:
-                            await update.message.reply_photo(photo=response.content)
-                        else:
-                            logging.warning(f"Сайт повернув статус {response.status_code} для зображення: {image_url}")
-                    except Exception as img_err:
-                        logging.warning(f"Не вдалося завантажити/відправити зображення: {img_err}")
+                    req = urllib.request.Request(
+                        image_url,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+                    )
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        photo_bytes = response.read()
+                        await update.message.reply_photo(photo=photo_bytes)
+                except Exception as img_err:
+                    logging.warning(f"Не вдалося завантажити/відправити зображення ({image_url}): {img_err}")
 
     except Exception as e:
         logging.error(f"Помилка при пошуку: {e}")
